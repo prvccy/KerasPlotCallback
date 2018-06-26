@@ -1,4 +1,5 @@
-#
+# Copyright 2018 prvccy <prvccy@gmail.com>
+# All rights reserved. MIT License.
 
 
 from IPython.display import clear_output
