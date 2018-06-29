@@ -39,7 +39,10 @@ class ClassificationPlotCallback(Callback):
             plots.append(k)
 
         y_pred = self.model.predict(self.validation_data[0])
-        y_pred = to_categorical(y_pred.argmax(axis=1))
+        if self.y_pred.shape[1]>1:
+            y_pred = to_categorical(self.y_pred.argmax(axis=1))
+        else:
+            y_pred = self.y_pred.round(0)
         
         if self.aucs is not None:
             self.aucs.append(roc_auc_score(self.validation_data[1], y_pred))
@@ -52,7 +55,10 @@ class ClassificationPlotCallback(Callback):
             plots.append('f1-score')
             
         if self.confusion_matrix:
-            cm = confusion_matrix(self.validation_data[1], y_pred)
+            if y_pred.shape[1]>1:
+                cm = confusion_matrix(self.validation_data[1].argmax(axis=1), y_pred.argmax(axis=1))
+            else:
+                cm = confusion_matrix(self.validation_data[1], y_pred.round(0))
             plots.append('confusion_matrix')
             
         cols = self.max_cols
