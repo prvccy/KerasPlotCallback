@@ -3,6 +3,7 @@ plot loss evaluation metrics F1-score AUC and confusion matrix on the end of epo
 
 
 usage:
+
     plot loss and metrics in keras.model.compile() as default
         e.g.  keras.model.compile(loss = 'mse', metrics = 'mae')
               keras.model.fit(callbacks = PrvKerasCbk() )
