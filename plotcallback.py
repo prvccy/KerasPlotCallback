@@ -19,7 +19,9 @@ class PrvKCbkDataGen(object):
     level2 key: attribute
     level2 key: "plotclass" data will be plot using "plotclass"
     '''
-    data = dict()
+    def __init__(self):
+        self.data = dict()
+        self.metrics = []
     
     def on_epoch_end(self, epoch, logs, predicts):
         raise NotImplementedError("on_epoch_end")
@@ -47,20 +49,27 @@ class PrvKCbkController(object):
 
 class PrvKerasCbk(Callback):
     '''
-    callback add to callbacks list of keras.model.fit 
+    callback add to callbacks list of keras.model.fit()
+    
+    this class will plot loss and metrics in keras.model.compile() as default
+        e.g.  keras.model.compile(loss = 'mse', metrics = 'mae')
+              keras.model.fit(callbacks = PrvKerasCbk() )
+    
+    plot confusion matrix: (loss must be binary_crossentropy or categorical_crossentropy)
+        keras.model.fit(callbacks = PrvKerasCbk(datagens=[PCDGConfusionMatrix()]) )
+        
+    save best model and training curve：
+        keras.model.fit(callbacks = PrvKerasCbk(controllers=[PKCSaveModelAndResult(path='/path/')]) )
+    
     '''
-    def __init__(self, savefile, path, dataset=None, datagens=[], controllers=[], plotcols = 2, subplotsize = (6,4)):
+    def __init__(self, datagens=[], controllers=[], plotcols = 2, subplotsize = (6,4)):
         self.datagens = datagens
         loss = PCDGLossAndMetrics()
         self.datagens.insert(0,loss)
         self.controllers = controllers
         self.plotcols = plotcols
         self.subplotsize = subplotsize
-        self.dataset = dataset
         self.data = dict()
-        self.savefile = savefile
-        self.path = path
-
 
     def on_epoch_end(self, epoch, logs={}):
         clear_output(wait=True)
@@ -68,13 +77,7 @@ class PrvKerasCbk(Callback):
         # TODO handle no testset error
         predicts['test_y'] = self.validation_data[1]
         predicts['test_pred'] = self.model.predict(self.validation_data[0])
-        predicts['test_price'] = self.dataset['price']
         
-        if self.dataset is not None and 'y_validation' in self.dataset:
-            predicts['cv_y'] = self.dataset["y_validation"]
-            predicts['cv_pred'] = self.model.predict(self.dataset["X_validation"])
-            predicts['cv_price'] = self.dataset['price_validation']
-            
         # first run data generator
         for dg in self.datagens:
             dg.on_epoch_end(epoch, logs, predicts)
@@ -110,11 +113,8 @@ class PrvKerasCbk(Callback):
                 c.on_training_end(self.data)
 
 
-
-
-
-                
 class PrvLineChart(PrvChart):
+    ''' draw line chart '''
     def plot(self, ax, plotdata, p):
         for key in plotdata:
             if key != 'plotclass':
@@ -122,8 +122,8 @@ class PrvLineChart(PrvChart):
                 ax.set_title(p,fontsize=12,color='r')
         ax.legend()
 
+
 class PCDGLossAndMetrics(PrvKCbkDataGen):
-    metrics = []
     def on_epoch_end(self, epoch, logs, predicts):
         self.metrics.append(logs.copy())
         for k in self.metrics[0]:
@@ -137,7 +137,7 @@ class PCDGLossAndMetrics(PrvKCbkDataGen):
 
 class PCDGConfusionMatrix(PrvKCbkDataGen):
     def on_epoch_end(self, epoch, logs, predicts):
-        for dataset in ['test','cv']:
+        for dataset in ['test']:
             if not dataset+'_y' in predicts:
                 continue
             self.data.update({'ConfusionMatrix_' + dataset:{}})
@@ -147,9 +147,8 @@ class PCDGConfusionMatrix(PrvKCbkDataGen):
                 cm = confusion_matrix(predicts[dataset + '_y'], predicts[dataset + '_pred'].round(0))
             self.data['ConfusionMatrix_' + dataset]['ConfusionMatrix_' + dataset] = cm
             self.data['ConfusionMatrix_' + dataset]['plotclass'] = 'PrvHeatMap'
-            
-      
-            
+
+
 class PrvHeatMap(PrvChart):
     def plot(self, ax,  plotdata, p):
         for key in plotdata:
@@ -163,7 +162,7 @@ class PCDGF1Score(PrvKCbkDataGen):
     recall = []
     precision = []
     def on_epoch_end(self, epoch, logs, predicts):
-        for dataset in ['test','cv']:
+        for dataset in ['test']:
             if not dataset+'_y' in predicts:
                 continue
             self.f1_score.append(f1_score(predicts[dataset + '_y'], predicts[dataset + '_pred'],average='samples'))
@@ -180,7 +179,7 @@ class PCDGF1Score(PrvKCbkDataGen):
 class PCDGROCAUC(PrvKCbkDataGen):
     aucs = []
     def on_epoch_end(self, epoch, logs, predicts):
-        for dataset in ['test','cv']:
+        for dataset in ['test']:
             if not dataset+'_y' in predicts:
                 continue
             self.aucs.append(roc_auc_score(predicts[dataset + '_y'], predicts[dataset + '_pred']))
@@ -197,19 +196,12 @@ class PKCSaveModelAndResult(PrvKCbkController):
         
     def on_epoch_end(self, epoch, data={}):
         #save best model
-        if 'cv_alpha_fees' in data:
-            key = 'cv_alpha_fees'
-        else:
-            key = 'test_alpha_fees'
-            
-        if data[key][-1] == max(data[key]):
+        if data['loss']['val_loss'][-1] == min(data['loss']['val_loss']):
             files = os.listdir(self.path)
             for file in files:
                 if file.startswith(self.savefile) and file.endswith('model'):
                     os.remove(self.path+file)
-            self.model.save(self.path + self.savefile + '_alpha' + \
-                        str(self.alpha_fees_short[-1]) + '_buyq' + \
-                        str(self.buyq_short[-1]) + '_sellq' + str(self.sellq_short[-1]) + '.model')
+            self.model.save(self.savefile + '_loss' + str(data['loss']['val_loss'][-1]) + '.model')
         
     def on_training_end(self, data={}):
         #save training data
